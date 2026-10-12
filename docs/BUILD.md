@@ -6,7 +6,7 @@
 - C++17 (`CMAKE_CXX_STANDARD 17`, `CMAKE_CXX_STANDARD_REQUIRED ON`)
 - libcurl — `find_package(CURL REQUIRED)` at the top level; every target links `CURL::libcurl` and defines `DLNA_HAS_LIBCURL=1`
 - On Windows: a vcpkg installation with the `curl` port, since `find_package(CURL)` resolves through vcpkg's toolchain file
-- On POSIX, optionally: FLTK 1.4.x — if `find_package(FLTK)` doesn't find a system install, CMake fetches `release-1.4.5` from the FLTK git repository via `FetchContent` and builds it as part of the tree
+- On POSIX, optionally: GTK4 development files (`libgtk-4-dev` on Debian/Ubuntu, `gtk4-devel` on Fedora) — CMake finds GTK4 via `pkg-config`
 
 ## Windows
 
@@ -18,7 +18,7 @@ cmake --install build
 
 Notes:
 
-- The executable target is `dlna-server`, built `WIN32` (no console window), with output name `DLNA Server.exe` (`set_target_properties(... OUTPUT_NAME "DLNA Server")`).
+- The executable target is `dlna-server`, built `WIN32` (no console window), with output name `dlna-server.exe` (`set_target_properties(... OUTPUT_NAME "dlna-server")`).
 - `dlna_core` sets `MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"` — static CRT, matching the executable's runtime library setting. Don't change one without the other; a mismatch is a link error, not a runtime bug.
 - Windows-only compile definitions: `UNICODE`, `_UNICODE`, `WINVER=0x0A00`, `_WIN32_WINNT=0x0A00`, `WIN32_LEAN_AND_MEAN`.
 - Linked system libraries: `ws2_32 shell32 ole32 oleaut32 uuid comctl32 shlwapi dwmapi rpcrt4 iphlpapi`.
@@ -26,27 +26,78 @@ Notes:
 
 ## Linux / macOS
 
-### POSIX install
+### Linux Build & Install
 
-WSL Ubuntu / Linux install now uses the repo script:
+Build commands on Linux / WSL Ubuntu:
 
-```bash
-sudo ./build-assets.sh --install
+- **Build binary assets only (testing)**:
+  ```bash
+  ./build.sh
+  ```
+  Compiles and places `dlna-server`, `dlna-server-gui`, `dlna-server-gui-bin`, and `share/` into `output/linux/`.
+
+- **Build Debian package (`.deb`)**:
+  ```bash
+  ./build.sh --deb
+  ```
+
+- **Build AppImage bundle (`.AppImage`)**:
+  ```bash
+  ./build.sh --appimage
+  ```
+
+- **Build Flatpak bundle (`.flatpak`)**:
+  ```bash
+  ./build.sh --flatpak
+  ```
+
+- **Install**:
+  ```bash
+  ./build.sh --install
+  ```
+   Removes any installed `com.github.dlna_server_14ag` (plus a legacy
+   `dlna-server` package of the same files) and installs the newly built package.
+
+- **Publish release**:
+  ```bash
+  ./build.sh --release [--notes] [--update=<tag>]
+  ```
+
+#### Underlying modular scripts (`scripts/`)
+
+The orchestrator `build.sh` delegates to dedicated modular scripts:
+- `scripts/build_linux.sh`: Compiles and copies core binaries to `output/linux/`.
+- `scripts/build_deb.sh`: thin wrapper that calls `scripts/build_linux.sh --deb`; do not call it directly in automation.
+- `scripts/build_appimage.sh`: Builds the `.AppImage` bundle via `linuxdeploy`.
+- `scripts/build_flatpak.sh`: Builds the Flatpak bundle via `flatpak-builder`.
+- `scripts/install_linux.sh`: Removes previous installation and installs the `.deb` package or binaries.
+- `scripts/release-linux.sh`: Publishes built assets to GitHub Releases.
+
+### Version and app identity
+
+`scripts/version.py` is the single source of version truth. It prints a
+tag of the form `v1.YY.DDD-buildN` (two-digit year, day-of-year,
+`buildN` prompt counter), e.g. `v1.26.76153-build7`. On an interactive
+terminal it prompts for the counter (`build? [0-99]`); elsewhere it
+defaults to `0` unless `--patch <n>` is passed. `--numeric-of <tag>`
+prints the bare numeric part (`1.26.76153`).
+
+```
+python scripts/version.py --patch 3 --now 2026-10-05T14:07   # v1.26.76153-build7
+python scripts/version.py --numeric-of v1.26.76153-build7    # 1.26.76153
 ```
 
-This builds GUI assets by default, writes the `.deb` into `output/linux/`, and installs that package with `dpkg -i` so it shows up in the package database.
-
-For CLI-only installs:
-
-```bash
-sudo ./build-assets.sh --cli --install
-```
-
-For release artifact builds without installing:
-
-```bash
-sudo ./build-assets.sh --platform linux
-```
+Pass `--version <tag>` to `build.sh` / `build.bat` (forwarded to
+`scripts/build_linux.sh` / `scripts/build-windows.ps1`) to pin a build
+to an exact tag; without it the scripts resolve the version themselves.
+CMake takes it as `-DDLNA_VERSION=<numeric>` and stamps it into the
+project version, the Windows `FILEVERSION`/`PRODUCTVERSION` resources,
+and the `.deb` (`com.github.dlna_server_14ag_<numeric>_amd64.deb`) and
+Windows zip (`com.github.dlna_server_14ag-<numeric>-windows-x64.zip`)
+file names. The app id `com.github.dlna_server_14ag` (`DLNA_APP_ID` in
+`CMakeLists.txt`) is baked into `src/app_identity.h` (generated from
+`src/app_identity.h.in`) and used for the window class, mutex, registry
+value, `/tmp` paths, GTK application id, and all installed file names.
 
 Raw CMake install flow still exists for manual builds:
 
@@ -64,22 +115,22 @@ Notes:
 
 ### Native GUI (optional)
 
-Controlled by `DLNA_ENABLE_FLTK_GUI` (default `ON`):
+Controlled by `DLNA_ENABLE_GTK4_GUI` (default `ON`):
 
 ```
-cmake -B build -S . -DDLNA_ENABLE_FLTK_GUI=OFF
+cmake -B build -S . -DDLNA_ENABLE_GTK4_GUI=OFF
 ```
 
-When enabled, this also builds `dlna-server-gui-native`, a second executable compiling the same POSIX source files a second time (it does not link `dlna_core`) plus `src/fltk_gui_main.cpp`. Any change to a POSIX source file needs to build cleanly against both target's include paths and compile definitions — check `target_compile_definitions` for both `dlna_core` and `dlna-server-gui-native` if you add a new `#ifdef`.
+When enabled, this builds `dlna-server-gui-gtk4`, a second executable that compiles `src/gtk4_gui_main.cpp` and `src/posix_tray.cpp` against GTK4, plus the shared `dlna_core` library.
 
 ### macOS app bundle
 
-If `DLNA_ENABLE_FLTK_GUI=ON` and the platform is Apple, an `DLNAServerApp` custom target assembles `DLNA Server.app`:
+If `DLNA_ENABLE_GTK4_GUI=ON` and the platform is Apple, an `DLNAServerApp` custom target assembles `DLNA Server.app`:
 
 ```
 Contents/MacOS/dlna-server            <- from dlna-server target
 Contents/MacOS/dlna-server-gui        <- packaging/macos/dlna-server-gui launcher script
-Contents/MacOS/dlna-server-gui-bin    <- from dlna-server-gui-native target
+Contents/MacOS/dlna-server-gui-bin    <- from dlna-server-gui-gtk4 target
 Contents/Resources/*.png, app.ico
 Contents/Info.plist                   <- from packaging/macos/Info.plist.in
 ```
@@ -88,13 +139,21 @@ Contents/Info.plist                   <- from packaging/macos/Info.plist.in
 
 ### Linux packaging
 
-Non-Apple Unix builds with `DLNA_ENABLE_FLTK_GUI=ON` install:
+Non-Apple Unix builds with `DLNA_ENABLE_GTK4_GUI=ON` install everything
+under the app id `com.github.dlna_server_14ag` (`DLNA_APP_ID` in
+`CMakeLists.txt`):
 
 - a launcher script generated from `packaging/linux/dlna-server-gui`
-- an SVG icon into the hicolor theme
-- three PNG icons (48/120/256) into `share/dlna-server/icons`
-- AppStream metadata generated from `packaging/linux/dlna-server.appdata.xml.in`
-- desktop entry installation via `packaging/linux/install_desktop.cmake.in`
+- the desktop entry as `com.github.dlna_server_14ag.desktop` in
+  `/usr/share/applications` (written by
+  `packaging/linux/install_desktop.cmake.in`)
+- an SVG icon as `com.github.dlna_server_14ag.svg` into the hicolor
+  scalable tree, plus PNG icons as `com.github.dlna_server_14ag.png`
+  into the hicolor `16x16`/`48x48`/`128x128`/`256x256` app dirs and
+  `pixmaps`
+- AppStream metadata generated from
+  `packaging/linux/com.github.dlna_server_14ag.appdata.xml`,
+  installed as `com.github.dlna_server_14ag.metainfo.xml`
 
 CPack is configured unconditionally for `UNIX AND NOT APPLE`:
 
@@ -107,7 +166,7 @@ Produces a `.deb` with `libcurl4` as a declared dependency (`CPACK_DEBIAN_PACKAG
 
 ## Environment variables read at runtime
 
-- `DLNA_SERVER_SKIP_FIREWALL` (Windows) — if set, `Server::Start()` skips the firewall-access check entirely. Useful in CI or when firewall rules are provisioned out-of-band.
+See `docs/CONFIGURATION.md` (single list, not repeated here).
 
 ## Command-line flags (all platforms)
 
@@ -144,3 +203,41 @@ Parsed in the same way on every platform — overrides are applied after config 
 | `--print-effective-media-sources` | Dumps `effectiveMediaSources` (sources + runtime overrides), one per line |
 | `--print-clear-override-then-effective` | Calls `ClearRuntimeSourceOverride()`, then dumps `effectiveMediaSources` — verifies that cleared-override state matches the persisted list |
 | `--print-source-override-lifecycle <quoted-comma-list>` | Sets runtime source override, starts the server, polls scan progress until complete, then stops — validates the override-start-stop lifecycle end-to-end |
+| `--print-clamp-browse-requested-count <requested> <available>` | Clamps a requested Browse result count against the available item count via `ClampBrowseRequestedCount()`, prints the result |
+| `--print-close-pending-lifecycle` | Drives `ClosePendingState` through request → stop → restart transitions and prints each state value |
+| `--print-concurrent-start-rescan-safety` | Starts the server while `Rescan()` runs concurrently; prints `start-ok` and the resulting leaf-media-item count |
+| `--print-config-load-lockstate` | Loads the config through `Config::Load()` and reports whether it completes |
+| `--print-config-path` | Prints the resolved config file path |
+| `--print-app-id` | Prints the app id (`com.github.dlna_server_14ag`) and exits |
+| `--print-debug-log-session-truncation <path>` | Reuses the debug-log handle across two writes and prints whether the same handle was reused |
+| `--print-default-playlist-path` | Prints the default playlist path resolved next to the config file |
+| `--print-dlna-server-header` | Prints the SSDP `SERVER:` header value produced by `GetDlnaServerHeader()` |
+| `--print-function-key-action <vkCode> <isRunning> <isBusy> <isScanning>` | Runs `DecideFunctionKeyAction()` with four `0`/`1` flags and prints the action (`show-help`, `rescan`, `refresh-source-list`, `show-context-menu`, or `none`) |
+| `--print-is-plausible-copydata-size <cbData>` | Passes a copy-data payload size to `IsPlausibleWideStringCopyDataSize()` and prints `1`/`0` |
+| `--print-log-since-lifecycle` | Exercises `GetSystemLogSince()` and prints latest-sequence values across two writes |
+| `--print-max-client-threads` | Prints the `kMaxClientThreads` constant shared by both HTTP server implementations |
+| `--print-media-database-id-overflow-guard <dbPath>` | Drives `MediaDatabase` stable-ID allocation past the overflow guard and prints the result |
+| `--print-media-database-id-reuse-lifecycle` | Exercises `MediaDatabase` stable-ID reuse across scan passes and prints the assigned IDs |
+| `--print-media-display-title <showFileNames> <titleOverride> <path>` | Builds the display title via `BuildDisplayTitleForMediaFile()` and prints it |
+| `--print-media-resource-url-suffix <path>` | Prints the resource-URL extension suffix via `BuildMediaResourceUrlExtensionSuffix()` |
+| `--print-media-source-file-extensions` | Prints each registered media-source file extension on its own line |
+| `--print-movie-title-from-path <path>` | Derives a movie title from a path via `SourceStemName()` and prints it |
+| `--print-network-endpoint-count <port>` | Enumerates network endpoints for `<port>` and prints the count |
+| `--print-notify-pool-worker-count` | Prints the GENA notify pool worker count constant |
+| `--print-remote-probe-cache-lifecycle <url>` | Probes a remote URL twice through the probe cache and prints the recompute counters (hit vs miss) |
+| `--print-resolve-bundled-resource <name>` | Resolves a bundled resource path via `ResolveBundledResourcePath()` and prints it |
+| `--print-routable-host-cache-invalidation` | Calls `GetRoutableHostUrl()` twice and prints whether the cached value was recomputed |
+| `--print-routable-host-url-twice <port1> <port2>` | Resolves the routable host URL twice for two ports and prints both results |
+| `--print-should-close-now <isRunning> <isBusy>` | Passes two `0`/`1` flags to `ShouldCloseNow()` and prints the decision |
+| `--print-should-drop-link-local-endpoint <candidateIsLinkLocal> <anyNonLinkLocalExists>` | Passes two `0`/`1` flags to `ShouldDropLinkLocalEndpoint()` and prints the decision |
+| `--print-should-use-unlisted-interface <isVirtual> <hasGateway>` | Passes two `0`/`1` flags to `ShouldUseUnlistedInterface()` and prints the decision |
+| `--print-single-file-source-scan` | Starts the server with a single-file source, waits for scan completion, prints the leaf-media-item count |
+| `--print-single-instance-lifecycle` | Exercises the single-instance lock acquire/listen/stop lifecycle and prints each transition |
+| `--print-single-instance-retry-timing` | Prints the single-instance retry timing (attempt count and delay) used when the peer is not yet reachable |
+| `--print-sockaddr-length-safety <reportedLength> <destinationCapacity>` | Passes a sockaddr length and destination capacity to `IsSockaddrLengthSafeToCopy()` and prints `1`/`0` |
+| `--print-strip-resource-id-extension <suffix>` | Strips an extension suffix from a resource ID via `StripResourceIdExtension()` and prints the result |
+| `--print-thread-guard-behavior` | Runs a guarded thread entry that throws and prints whether the exception was caught (`RunGuarded` behavior) |
+| `--print-thread-pool-exception-resilience` | Submits a throwing task to a `BoundedThreadPool` and verifies the pool survives; prints `1`/`0` |
+| `--print-transmitfile-chunk-plan <totalBytes>` | Computes the transmit-file chunk sizes via `ComputeTransmitFileChunkSizes()` and prints each chunk size |
+| `--print-tray-notify-decode <rawLParam> <expectedIconId>` | Decodes a tray notification `lParam` via `DecodeTrayNotifyEvent()` and prints the action |
+| `--print-trim-wide <text>` | Trims leading/trailing whitespace via `TrimWide()` and prints the result |

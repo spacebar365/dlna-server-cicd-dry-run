@@ -6,14 +6,14 @@ The codebase maintains two parallel implementations behind the same headers:
 
 | Concern | Windows | POSIX |
 |---|---|---|
-| Entry point | `src/main.cpp` (`wWinMain`, GUI) | `src/posix_main.cpp` (CLI), `src/fltk_gui_main.cpp` (optional GUI) |
+| Entry point | `src/main.cpp` (`wWinMain`, GUI) | `src/posix_main.cpp` (CLI), `src/gtk4_gui_main.cpp` (optional GUI) |
 | Server lifecycle | `src/server.cpp` | `src/posix_server.cpp` |
 | SSDP | `src/ssdp.cpp` | `src/posix_ssdp.cpp` |
 | HTTP server | `src/httpserver.cpp` | `src/posix_httpserver.cpp` |
 | Network enumeration | `src/netutils.cpp` | `src/posix_netutils.cpp` |
 | Filesystem access | `src/fs_backend_win32.cpp` | `src/fs_backend_posix.cpp` |
 | Firewall access | `src/firewall_access_win.cpp` | — (no firewall on POSIX server) |
-| GUI / dialogs | `src/mainwindow.cpp`, `src/settingsdlg.cpp`, `src/logdlg.cpp`, `src/help_dialog.cpp`, `src/modal_focus.cpp`, `src/source_drop_target.cpp` | `src/fltk_gui_main.cpp` (optional, via `DLNA_ENABLE_FLTK_GUI`) |
+| GUI / dialogs | `src/mainwindow.cpp`, `src/settingsdlg.cpp`, `src/logdlg.cpp`, `src/help_dialog.cpp`, `src/modal_focus.cpp`, `src/source_drop_target.cpp` | `src/gtk4_gui_main.cpp` (optional, via `DLNA_ENABLE_GTK4_GUI`) |
 | Access key hooks | `src/access_key_hook.cpp` | — |
 | Config storage | `src/config.cpp` | `src/posix_config.cpp` |
 | Logging | `src/log.cpp` | `src/posix_log.cpp` |
@@ -67,6 +67,11 @@ HLS manifests are never expanded into per-segment DIDL items. `IsHlsManifestText
 
 - `dlna_core` — static library, all shared + platform logic
 - `dlna-server` — the primary executable (Win32 GUI on Windows, headless CLI on POSIX)
-- `dlna-server-gui-native` (POSIX only, `DLNA_ENABLE_FLTK_GUI=ON` by default) — FLTK-based native GUI, built from its own source list rather than linking `dlna_core`, so it does not share build flags with the CLI executable
+- `dlna-server-gui-gtk4` (POSIX only, `DLNA_ENABLE_GTK4_GUI=ON` by default) — GTK4-based native GUI, built from its own source list rather than linking `dlna_core`, so it does not share build flags with the CLI executable
 - macOS: an `.app` bundle assembling both POSIX binaries plus icons via a custom target
-- Linux (non-Apple): CPack `DEB` generator, desktop file, AppStream metadata, icon installation
+- Linux (non-Apple): CPack `DEB` generator, desktop file, AppStream metadata, icon installation — all named after the app id `com.github.dlna_server_14ag` (see `docs/BUILD.md`)
+
+## App identity and version (`CMakeLists.txt`, `scripts/version.py`)
+
+- `DLNA_APP_ID` (`com.github.dlna_server_14ag`) is the single branding constant. CMake bakes it into the generated `app_identity.h` (from `src/app_identity.h.in`: `DLNA_APP_ID` / `DLNA_APP_ID_W`, window class, single-instance mutex) and into every installed file name (desktop entry, metainfo, icons).
+- `DLNA_VERSION` (numeric `1.YY.DDD`, resolved by `scripts/version.py` or pinned via `--version`) becomes the CMake project version and is baked into the generated `version.h` (`DLNA_SERVER_VERSION_STRING`, `DLNA_SERVER_VERSION_RC`) consumed by `app.rc` and the SSDP `SERVER:` header.

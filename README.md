@@ -27,8 +27,8 @@ dlna-server shares your videos, music, and photos with TVs, game consoles, and o
 See [`CHANGELOG.md`](CHANGELOG.md) for the full release history. Prebuilt binaries are available from the [Releases](https://github.com/14ag/dlna-server/releases) page:
 
 - **Windows** - download  the `.exe`  and run it
-- **Linux** - run `sudo ./build-assets.sh --install` from repo root
-- **Linux CLI-only** - run `sudo ./build-assets.sh --cli --install`
+- **Linux** - run `sudo ./build.sh --install` from repo root
+- **Linux CLI-only** - run `sudo ./build.sh --cli --install`
 
 `--install` builds GUI assets by default, writes the `.deb` into `output/linux/`, and installs that package with `dpkg -i` so it appears in the package database. If you want to confirm the install, run `dpkg -L dlna-server | grep desktop`.
 
@@ -36,14 +36,14 @@ The desktop GUI starts by default on every platform. Use the Settings dialog to 
 
 ## Usage
 
-**Windows** - launch `DLNA Server.exe`, add a folder, playlist, or network URL as a source, and click Start. A tray icon keeps it running in the background. Pass `--headless` to start with tray icon only and no window.
+**Windows** - launch `dlna-server.exe`, add a folder, playlist, or network URL as a source, and click Start. A tray icon keeps it running in the background. Pass `--headless` to start with tray icon only and no window.
 
 **Linux / macOS desktop** - launch `dlna-server-gui-bin` (AppImage starts it automatically). Use the Settings dialog to configure sources and server options.
 
 **Headless / CLI (all platforms):**
 
 ```
-DLNA Server.exe --port 8200 --source C:\media
+dlna-server.exe --port 8200 --source C:\media
 dlna-server --port 8200 --source /path/to/media --source ftp://user:pass@host/media
 ```
 
@@ -62,7 +62,7 @@ Settings persist to `config.ini` under a `[Settings]` section - server name, por
 - CMake 3.20 or newer
 - A C++17 compiler - MSVC on Windows, GCC or Clang on Linux/macOS
 - libcurl - via vcpkg on Windows, via your system package manager or dev package on POSIX
-- FLTK, only if you're building the native Linux/macOS GUI. If it's not already installed, CMake fetches and builds it for you.
+- GTK4 development files, only if you're building the native Linux/macOS GUI (`libgtk-4-dev` on Debian/Ubuntu, `gtk4-devel` on Fedora). CMake finds it via `pkg-config`.
 
 **Windows** (requires a vcpkg install with the CURL port available):
 
@@ -80,9 +80,9 @@ cmake --build build
 sudo cmake --install build
 ```
 
-The native FLTK GUI (`dlna-server-gui-native`) builds by default on POSIX. Turn it off with `-DDLNA_ENABLE_FLTK_GUI=OFF` if you only want the headless binary.
+The native GTK4 GUI (`dlna-server-gui-gtk4`) builds by default on POSIX. Turn it off with `-DDLNA_ENABLE_GTK4_GUI=OFF` if you only want the headless binary.
 
-On Linux, `cmake --install` also registers desktop and AppStream metadata; `CPack` produces a `.deb` package (`libcurl4` is listed as a runtime dependency). For the repo launcher, prefer `./build-assets.sh --install` so install lands in `dpkg` in one step.
+On Linux, `cmake --install` also registers desktop and AppStream metadata; `CPack` produces a `.deb` package (`libcurl4` is listed as a runtime dependency). For the repo launcher, prefer `./build.sh --install` so install lands in `dpkg` in one step.
 
 ## Testing
 
@@ -91,6 +91,9 @@ A pytest-based test suite lives under `tests/`. Run it from the repository root:
 ```
 pytest
 ```
+
+Suite conventions (fixtures, platform markers, flaky-by-environment tests)
+are documented in [`docs/TESTING.md`](docs/TESTING.md).
 
 ## Developer documentation
 
@@ -103,4 +106,9 @@ Deeper references live in [`docs/`](docs/):
 - [`docs/MEDIA-SCANNING.md`](docs/MEDIA-SCANNING.md) - source scanning, playlist parsing, HLS handling
 - [`docs/THREADING-AND-CONCURRENCY.md`](docs/THREADING-AND-CONCURRENCY.md) - locking model and thread-safety guarantees
 - [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) - `config.ini` field reference
+- [`docs/TESTING.md`](docs/TESTING.md) - test suite conventions and markers
 - [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md) - open defects and scoped-out findings
+
+
+## Credits
+ [B00merang-Project](https://github.com/B00merang-Project/Windows-10)

@@ -12,7 +12,7 @@ Implemented in `src/httpserver.cpp` (Windows) and `src/posix_httpserver.cpp` (PO
 ## Connection handling
 
 - Windows: `CreateThreadpoolWork` per accepted connection, pool sized 4–64 threads (`SetThreadpoolThreadMinimum`/`Maximum`).
-- POSIX: one `std::thread` per connection, capped at `kMaxClientThreads` (64). Past the cap, new connections get `503 Service Unavailable` and are closed immediately. Finished threads are reaped opportunistically in the accept loop (`ReapFinishedClientThreads`).
+- POSIX: accepted connections are dispatched to a pre-spawned `BoundedThreadPool` sized to `kMaxClientThreads` (64) for both worker count and queue depth, mirroring the pool-based model the Windows build uses. When the queue is full, the accept loop blocks on `Submit()` until a worker frees up instead of rejecting the connection.
 - Both sides check `IPWhitelist::Get().IsAllowed(clientIp)` right after `accept()`, before any request is read, and respond `403 Forbidden` if the address isn't allowed.
 - HTTP/1.1 keep-alive is honored based on the `Connection` header and, absent one, the request's HTTP version (`ShouldKeepAlive`).
 
@@ -29,7 +29,7 @@ All media responses (`/media/`, `/subtitle/`, `/albumart/`) include a `transferM
 
 ## Second-instance source bypass (Windows)
 
-When a second `DLNA Server.exe` instance is launched with `--source` and an existing main window is already running (`FindWindowW("dlna-server_Main")`), the second instance sends the source list to the first instance via `WM_COPYDATA` (`kCopyDataSourceReplace = 1`) and exits immediately. The first instance receives the message in `MainWindow::HandleMessage`, sets the runtime source override, and restarts the server with the new sources. This avoids having to stop the GUI and relaunch.
+When a second `dlna-server.exe` instance is launched with `--source` and an existing main window is already running (`FindWindowW(DLNA_MAIN_WINDOW_CLASS_W)` — `com.github.dlna_server_14ag.Main`, see `src/app_identity.h`), the second instance sends the source list to the first instance via `WM_COPYDATA` (`kCopyDataSourceReplace = 1`) and exits immediately. The first instance receives the message in `MainWindow::HandleMessage`, sets the runtime source override, and restarts the server with the new sources. This avoids having to stop the GUI and relaunch.
 
 ## Routes
 
